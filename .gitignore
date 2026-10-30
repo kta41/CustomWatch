@@ -1,0 +1,10 @@
+*.apk
+*.aab
+*.apks
+.gradle/
+build/
+local.properties
+*.jks
+*.keystore
+redacted-evidence.json
+redacted-gatt-correlacion-evidence.json
