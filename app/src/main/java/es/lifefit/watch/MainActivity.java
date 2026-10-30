@@ -364,7 +364,10 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 1);
             return;
         }
-        getPreferences(MODE_PRIVATE).edit().putString("address", value).apply();
+        if (!SleepExport.selectDevice(this, value)) {
+            status.setText("No se pudo guardar el reloj seleccionado");
+            return;
+        }
         Intent intent = new Intent(this, WatchService.class).putExtra("address", value);
         startForegroundService(intent);
     }

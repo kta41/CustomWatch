@@ -49,8 +49,8 @@ public final class WatchSleepHistory {
                 int state = data[offset + width - 1] & 0xff;
                 offset += width;
                 if (timestamped) {
-                    if (state > 3 || end <= previous) continue;
-                    samples.add(new Sample(date, previous, end, state == 0 ? 3 : state));
+                    if (end <= previous) continue;
+                    if (state <= 3) samples.add(new Sample(date, previous, end, state == 0 ? 3 : state));
                     previous = end;
                 } else if (state >= 1 && state <= 3) {
                     samples.add(new Sample(date, end - 300000L, end, state));

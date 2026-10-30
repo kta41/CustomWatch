@@ -732,6 +732,9 @@ public class WatchService extends Service {
                     sleepHistoryStatus = "Historial: no se pudo guardar; sin confirmar";
                     break;
                 }
+                if (hasData && getSharedPreferences("sleep_export", MODE_PRIVATE).getBoolean("automatic", false)) {
+                    SleepExport.exportAsync(this, address, true, null);
+                }
                 sleepSync = null;
                 sleepSyncRequestId++;
                 queueFrame(ProtocolFrame.command(WatchSleepTransfer.GROUP, WatchSleepTransfer.CONFIRM,

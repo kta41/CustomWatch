@@ -88,8 +88,11 @@ The [technical reference](TECHNICAL_REFERENCE.es.md) documents payloads, notific
 
 ## Privacy and Data
 
-- Health observations, sleep archives and settings remain in private local Android storage. CustomWatch does not request Internet access.
-- Uninstalling the app or clearing its data removes local history. Automatic backups and device transfers of private app data are disabled; there is no export yet.
+- Health observations, sleep archives and settings are stored privately on the phone. CustomWatch does not request Internet access.
+- Sleep export is opt-in: in **Ajustes > Exportación local de sueño**, select a Storage Access Framework (SAF) document and use **Exportar ahora**. It exports existing sleep data for the currently selected watch only; it does not collect new nights. The optional **Actualizar al guardar sueño** attempts an update when sleep data is saved, but does not guarantee recording or export.
+- The JSON contains sensitive sleep dates, intervals, phases and related details. Its per-watch source ID is a randomly generated UUID, not the watch's MAC address. The selected document may be overwritten when changing watches; its provider or authorized apps may access it, and SAF writes are not necessarily atomic.
+- The optional [Termux HTTPS bridge](orbit-sync/GUIA.md) reads an accessible export and sends it to a compatible server; CustomWatch itself has no Internet permission. Android or provider restrictions can prevent access or background operation. Re-export after changes and check the bridge's status and conflicts; synchronization is not guaranteed.
+- Uninstalling the app or clearing its data destroys the private SQLite archive. Automatic app backups and device transfers are disabled. Keep protected backups of exported files separately, but an export is not a complete backup and cannot restore the original SQLite archive.
 - The notification listener can technically access notifications from the phone; CustomWatch processes selected apps and alarm-detection metadata. Notification messages are not saved.
 - `QUERY_ALL_PACKAGES` is used to list enabled installed apps, including apps without launcher activities. Its use is subject to Google Play policy review. App selections do not change another app's Android notification permissions.
 - Review logs, evidence and screenshots for device identifiers, personal data and credentials before sharing them.

@@ -15,6 +15,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,6 +45,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class ProductActivity extends Activity {
+    private static final int CREATE_SLEEP_EXPORT = 421;
     private static final int BACKGROUND = Color.rgb(14, 17, 20);
     private static final int SURFACE = Color.rgb(25, 30, 32);
     private static final int BORDER = Color.rgb(51, 60, 58);
@@ -133,6 +135,39 @@ public final class ProductActivity extends Activity {
         if ("notificaciones".equals(page)) navigate("ajustes");
         else if (!"inicio".equals(page)) navigate("inicio");
         else super.onBackPressed();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != CREATE_SLEEP_EXPORT || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        try {
+            int access = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+            if ((data.getFlags() & access) != access) {
+                throw new SecurityException("El proveedor no concedió lectura y escritura.");
+            }
+            getContentResolver().takePersistableUriPermission(uri, access);
+                if (!SleepExport.selectDestination(this, uri.toString())) {
+                throw new IllegalStateException("No se pudo guardar el destino.");
+            }
+            showMessage("Documento seleccionado.");
+        } catch (SecurityException | IllegalStateException exception) {
+            showMessage("No se pudo conservar el acceso al documento: " + exception.getMessage());
+        }
+    }
+
+    private void selectSleepExport() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json")
+                .putExtra(Intent.EXTRA_TITLE, "customwatch-sueno.json")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, CREATE_SLEEP_EXPORT);
+        } catch (android.content.ActivityNotFoundException exception) {
+            showMessage("No hay un selector de documentos disponible.");
+        }
     }
 
     private String address() {
@@ -312,6 +347,7 @@ public final class ProductActivity extends Activity {
             space(16);
         }
         content.addView(text(prettyDay(metrics.date), 14, ACCENT, true));
+        if (night.ambiguous) notice("Coberturas incompatibles para esta noche. Se muestra la transferencia más reciente y se bloquea la exportación.");
         space(8);
         content.addView(text(duration(metrics.sleepMillis()), 40, TEXT, true));
         space(6);
@@ -461,9 +497,53 @@ public final class ProductActivity extends Activity {
         settingsSwitch("Vibrar con alarmas del móvil", "phone_alarms", false);
         content.addView(text("Las alarmas usan la función de búsqueda del reloj; no muestran una alarma nativa.", 12, MUTED, false));
         divider();
+        content.addView(text("EXPORTACIÓN LOCAL DE SUEÑO", 11, ACCENT, true));
+        space(10);
+        SharedPreferences export = getSharedPreferences("sleep_export", MODE_PRIVATE);
+        boolean selected = !export.getString("uri", "").isEmpty();
+        content.addView(text(selected ? "Documento seleccionado: solo sueño del reloj seleccionado" : "Sin documento seleccionado", 14, TEXT, false));
+        space(8);
+        content.addView(action("Seleccionar documento", false, this::selectSleepExport));
+        space(8);
+        Switch automatic = switchView("Actualizar al guardar sueño", export.getBoolean("automatic", false));
+        automatic.setOnCheckedChangeListener((button, checked) -> {
+            if (!export.edit().putBoolean("automatic", checked).commit()) showMessage("No se pudo guardar el ajuste.");
+        });
+        content.addView(automatic);
+        content.addView(action("Exportar ahora", false, () -> {
+            showMessage("Exportando sueño...");
+            SleepExport.exportAsync(this, address(), false, () -> {
+                if (!destroyed) {
+                    message = "";
+                    render();
+                }
+            });
+        }));
+        String destination = export.getString("uri", "");
+        long lastSuccess = destination.equals(export.getString("last_uri", ""))
+            && address().equals(export.getString("last_device", ""))
+                ? export.getLong("last_success", 0) : 0;
+        space(8);
+        boolean pending = !destination.isEmpty() && export.getBoolean(SleepExport.pendingKey(destination), false);
+        content.addView(text(pending ? "Exportación pendiente o interrumpida; estado del documento no garantizado. Reintenta explícitamente."
+            : lastSuccess == 0 ? "Sin exportación verificada para el reloj seleccionado"
+            : "Última exportación verificada de este reloj: "
+            + DateFormat.getDateTimeInstance().format(new Date(lastSuccess)), 12, pending ? WARM : MUTED, false));
+        if (!pending && lastSuccess != 0 && export.getBoolean("last_unreadable", false)) {
+            content.addView(text("Aviso: se exportaron noches válidas, pero hay transferencias ilegibles.", 12, WARM, false));
+        }
+        String exportError = destination.equals(export.getString("error_uri", "")) ? export.getString("error", "") : "";
+        if (!exportError.isEmpty()) content.addView(text("Error: " + exportError, 12, WARM, false));
+        space(6);
+        content.addView(text("El documento solo contiene el reloj seleccionado y puede sustituirse al cambiar de reloj. "
+            + "SAF no garantiza una escritura atómica. Si una revisión más reciente es parcial o menor, "
+            + "el destino puede rechazarla y requerir revisión manual. Termux depende del acceso del proveedor.", 12, MUTED, false));
+        content.addView(text("Las exportaciones anteriores usaban un origen compartido. El nuevo origen por reloj "
+            + "puede duplicar datos ya importados y requiere revisión manual.", 12, WARM, false));
+        divider();
         content.addView(text("PRIVACIDAD", 11, ACCENT, true));
         space(10);
-        content.addView(text("Los datos se guardan en este móvil. Borrar los datos o desinstalar CustomWatch los elimina; no hay copia automática.", 14, MUTED, false));
+        content.addView(text("Los datos originales se guardan en este móvil. Borrar los datos o desinstalar CustomWatch los elimina.", 14, MUTED, false));
         space(14);
         link("Herramientas avanzadas", () -> startActivity(new Intent(this, MainActivity.class)));
     }
@@ -626,7 +706,7 @@ public final class ProductActivity extends Activity {
                 .setNegativeButton("Cancelar", null).setPositiveButton("Guardar", (dialog, which) -> {
                     String value = input.getText().toString().trim().toUpperCase(Locale.ROOT);
                     if (!BluetoothAdapter.checkBluetoothAddress(value)) { showMessage("Dirección Bluetooth no válida."); return; }
-                    getSharedPreferences("MainActivity", MODE_PRIVATE).edit().putString("address", value).apply();
+                    if (!SleepExport.selectDevice(this, value)) { showMessage("No se pudo guardar el reloj seleccionado."); return; }
                     selectedNight = 0;
                     loadData();
                 }).show();

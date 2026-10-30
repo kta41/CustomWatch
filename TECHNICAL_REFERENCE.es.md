@@ -27,7 +27,13 @@ La navegacion principal contiene Inicio, Sueno, Actividad, Pulso y Ajustes. Suen
 
 En Inicio, **Actualizar resumen** solicita actividad, ultima lectura de pulso y bateria; no solicita ni sincroniza el historial de sueno. La bateria muestra la ultima lectura conservada y su fecha de consulta; se vuelve a consultar al conectar y cada diez minutos mientras la conexion permanezca activa.
 
-La informacion de salud y las preferencias permanecen en almacenamiento privado local; la app no solicita acceso a Internet. Las bases de datos no tienen copia automatica: desinstalar o borrar los datos de CustomWatch elimina el historial. Las pantallas anteriores y las herramientas manuales permanecen accesibles en Ajustes, Herramientas avanzadas.
+La informacion de salud y las preferencias se guardan en almacenamiento privado local; la app no solicita permiso de Internet. Las bases de datos no tienen copia automatica: desinstalar o borrar los datos de CustomWatch destruye el archivo SQLite y elimina el historial. Las pantallas anteriores y las herramientas manuales permanecen accesibles en Ajustes, Herramientas avanzadas.
+
+En **Ajustes > Exportacion local de sueno**, la exportacion es voluntaria: se selecciona un documento mediante Storage Access Framework (SAF) y se usa **Exportar ahora**. El JSON contiene solo el sueno ya guardado del reloj seleccionado; exportar no recoge nuevas noches. **Actualizar al guardar sueno** es opcional e intenta actualizar el documento al guardar datos, sin garantizar el registro ni la exportacion. El identificador de fuente de cada reloj es un UUID aleatorio, no su direccion MAC.
+
+El JSON incluye datos sensibles, como fechas, intervalos y fases; el proveedor del documento y otras aplicaciones autorizadas pueden acceder a el. El documento puede sobrescribirse al cambiar de reloj y SAF no garantiza escrituras atomicas. Conserva copias protegidas en otro lugar: la exportacion no es una copia completa ni permite recuperar el archivo SQLite original.
+
+El [puente HTTPS opcional para Termux](orbit-sync/GUIA.md) lee una exportacion accesible y la envia a un servidor compatible; la conexion no la realiza CustomWatch. Las restricciones de Android o del proveedor pueden impedir el acceso o la ejecucion en segundo plano. Reexporta tras cambios y comprueba el estado y los conflictos: no se garantiza la sincronizacion. Las revisiones incompatibles o una fuente anterior compartida pueden requerir revision manual o generar duplicados.
 
 ## Arquitectura
 
@@ -155,7 +161,7 @@ La sincronizacion experimental consulta primero el descriptor de capacidades (`0
 
 En el Prixton se recibio una noche de 5 h 28 min, con 37 min profundos y 4 h 51 min ligeros. El total coincide con lo indicado en el reloj; las fases coinciden con la consulta diaria de la app, pero no se han contrastado independientemente. Una segunda transferencia no contenia datos; el historial guardado siguio visible tras reiniciar CustomWatch. Esto no demuestra cuantos dias conserva el reloj ni que toda sincronizacion sea inocua. Los calculos por muestras son experimentales, omiten solapamientos y para cada fecha muestran la transferencia mas reciente que contiene muestras. No se calcula REM.
 
-**El historial solo se guarda en el almacenamiento privado de CustomWatch en ese movil. Desinstalar la app o borrar sus datos lo elimina; no hay copia de seguridad automatica ni exportacion.**
+**Desinstalar la app o borrar sus datos destruye el archivo SQLite privado; la exportacion opcional no es una copia completa ni permite recuperarlo.**
 
 ## Pruebas
 
