@@ -13,16 +13,23 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.content.Intent;
+import android.content.Context;
 import android.content.pm.ServiceInfo;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.view.KeyEvent;
 import java.io.ByteArrayOutputStream;
+import java.text.DateFormat;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.UUID;
 
 public class WatchService extends Service {
@@ -35,8 +42,15 @@ public class WatchService extends Service {
     private static volatile String currentStatus = "Desconectado";
     private static volatile String batteryStatus = "Batería: sin consultar";
     private static volatile String healthStatus = "Sin consultar";
+    private static volatile String activityStatus = "Actividad: sin consultar";
+    private static volatile String storageStatus = "";
+    private static volatile String sleepStatus = "Sueño: sin consultar";
+    private static volatile String sleepHistoryStatus = "Historial: sin sincronizar";
+    private static volatile String sleepHistoryData = "Historial: sin registros guardados";
     private static volatile String alarmsStatus = "Alarmas: sin consultar";
     private static volatile String sportStatus = "Deporte: sin consultar";
+    private static volatile String weatherStatus = "Clima: sin probar";
+    private static volatile String musicStatus = "Música: esperando controles del reloj";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ArrayDeque<byte[]> writes = new ArrayDeque<>();
     private final ArrayDeque<PendingNotification> messages = new ArrayDeque<>();
@@ -49,15 +63,28 @@ public class WatchService extends Service {
     private int batteryRequestId;
     private boolean healthPending;
     private int healthRequestId;
+    private boolean activityPending;
+    private int activityRequestId;
+    private WatchSleepSync sleepSync;
+    private int sleepSyncRequestId;
     private boolean alarmsPending;
     private int alarmsRequestId;
     private boolean sportPending;
     private int sportRequestId;
     private int sequence = 1;
     private int pendingSequence = -1;
+    private int weatherSequence = -1;
+    private int musicSequence = -1;
     private int mtu = 23;
     private String address;
     private final Runnable reconnect = this::connect;
+    private final Runnable periodicBattery = new Runnable() {
+        @Override public void run() {
+            if (!ready) return;
+            requestBattery();
+            handler.postDelayed(this, 10 * 60 * 1000L);
+        }
+    };
 
     private static final class PendingNotification {
         final int type;
@@ -77,8 +104,83 @@ public class WatchService extends Service {
         return batteryStatus;
     }
 
+    public static boolean isConnected() {
+        WatchService service = instance;
+        return service != null && service.ready;
+    }
+
+    public static void loadBattery(Context context, String device) {
+        if (device == null || device.isEmpty()) return;
+        android.content.SharedPreferences preferences = context.getSharedPreferences("battery", MODE_PRIVATE);
+        int percentage = preferences.getInt(device + ":percentage", -1);
+        long observed = preferences.getLong(device + ":observed", 0);
+        if (percentage < 0 || observed <= 0) {
+            batteryStatus = "Batería: sin datos";
+            return;
+        }
+        String when = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(observed));
+        batteryStatus = "Batería: " + percentage + "%"
+                + (preferences.getBoolean(device + ":charging", false) ? " · cargando" : "")
+                + " · consultada " + when;
+    }
+
     public static String healthStatus() {
         return healthStatus;
+    }
+
+    public static String activityStatus() {
+        return activityStatus;
+    }
+
+    public static String storageStatus() {
+        return storageStatus;
+    }
+
+    public static String sleepStatus() {
+        return sleepStatus;
+    }
+
+    public static String sleepHistoryStatus() {
+        return sleepHistoryStatus;
+    }
+
+    public static String sleepHistoryData() {
+        return sleepHistoryData;
+    }
+
+    public static void loadSleepHistory(Context context, String device) {
+        if (device == null || device.isEmpty()) return;
+        try (WatchSleepArchive archive = new WatchSleepArchive(context.getApplicationContext())) {
+            List<List<WatchSleepHistory.Sample>> transfers = new ArrayList<>();
+            boolean unreadable = false;
+            for (WatchSleepArchive.Transfer transfer : archive.load(device)) {
+                try {
+                    transfers.add(WatchSleepHistory.decode(transfer.data, transfer.timestamped,
+                            TimeZone.getTimeZone(transfer.timeZone)));
+                } catch (IllegalArgumentException exception) {
+                    unreadable = true;
+                }
+            }
+            sleepHistoryData = WatchSleepHistory.summarize(transfers)
+                    + (unreadable ? "\nHay datos guardados pendientes de interpretar" : "");
+        } catch (RuntimeException exception) {
+            sleepHistoryData = "No se pudo leer el historial guardado";
+        }
+    }
+
+    public static boolean requestSleepHistory() {
+        WatchService service = instance;
+        if (service == null || !service.ready) return false;
+        service.handler.post(() -> {
+            if (!service.ready || service.sleepSync != null) return;
+            service.sleepSync = new WatchSleepSync();
+            sleepHistoryStatus = "Historial: consultando configuración...";
+            service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+            service.queueFrame(ProtocolFrame.command(WatchSleepCapabilities.GROUP, WatchSleepCapabilities.REQUEST,
+                    new byte[0], service.sequence++ & 0xffff));
+            service.sleepSyncTimeout();
+        });
+        return true;
     }
 
     public static String alarmsStatus() {
@@ -89,14 +191,55 @@ public class WatchService extends Service {
         return sportStatus;
     }
 
-    public static boolean sendWeatherTest() {
+    public static String weatherStatus() {
+        return weatherStatus;
+    }
+
+    public static String musicStatus() {
+        return musicStatus;
+    }
+
+    public static boolean sendMusicTest() {
         WatchService service = instance;
         if (service == null || !service.ready) return false;
         service.handler.post(() -> {
-            if (!service.ready) return;
+            if (!service.ready || service.musicSequence != -1) return;
+            int sentSequence = service.sequence++ & 0xffff;
+            service.musicSequence = sentSequence;
+            musicStatus = "Música: enviando prueba...";
+            service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+            service.queueFrame(ProtocolFrame.command(WatchMusic.GROUP, WatchMusic.SET_INFO,
+                    WatchMusic.testPayload(), sentSequence));
+            service.handler.postDelayed(() -> {
+                if (service.musicSequence == sentSequence) {
+                    service.musicSequence = -1;
+                    musicStatus = "Música: sin confirmación BLE";
+                    service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+                }
+            }, 8000);
+        });
+        return true;
+    }
+
+    public static boolean sendWeatherTest(boolean extended) {
+        WatchService service = instance;
+        if (service == null || !service.ready) return false;
+        service.handler.post(() -> {
+            if (!service.ready || service.weatherSequence != -1) return;
+            int sentSequence = service.sequence++ & 0xffff;
+            service.weatherSequence = sentSequence;
+            weatherStatus = "Clima: enviando prueba...";
+            service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
             service.queueFrame(ProtocolFrame.command(WatchWeather.GROUP, WatchWeather.SET,
-                    WatchWeather.testPayload(), service.sequence++ & 0xffff));
-            service.setStatus("Clima de prueba en cola; comprueba el reloj");
+                    extended ? WatchWeather.extendedTestPayload(java.util.Calendar.getInstance())
+                        : WatchWeather.testPayload(), sentSequence));
+            service.handler.postDelayed(() -> {
+                if (service.weatherSequence == sentSequence) {
+                    service.weatherSequence = -1;
+                    weatherStatus = "Clima: sin confirmación BLE";
+                    service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+                }
+            }, 8000);
         });
         return true;
     }
@@ -167,6 +310,30 @@ public class WatchService extends Service {
         return true;
     }
 
+    public static boolean requestActivity() {
+        WatchService service = instance;
+        if (service == null || !service.ready) return false;
+        service.handler.post(() -> {
+            if (!service.ready || service.activityPending) return;
+            service.activityPending = true;
+            int requestId = ++service.activityRequestId;
+            activityStatus = "Actividad: consultando...";
+            sleepStatus = "Sueño: consultando...";
+            service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+            service.queueFrame(ProtocolFrame.command(WatchActivity.GROUP, WatchActivity.REQUEST,
+                    new byte[0], service.sequence++ & 0xffff));
+            service.handler.postDelayed(() -> {
+                if (service.activityPending && service.activityRequestId == requestId) {
+                    service.activityPending = false;
+                    activityStatus = "Actividad: sin respuesta del reloj o función no compatible";
+                    sleepStatus = "Sueño: sin respuesta del reloj o función no compatible";
+                    service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
+                }
+            }, 8000);
+        });
+        return true;
+    }
+
     public static boolean findWatch() {
         WatchService service = instance;
         if (service == null || !service.ready) return false;
@@ -185,14 +352,16 @@ public class WatchService extends Service {
             if (!service.ready || service.batteryPending) return;
             service.batteryPending = true;
             int requestId = ++service.batteryRequestId;
-            batteryStatus = "Batería: consultando...";
+            loadBattery(service, service.address);
+            batteryStatus += " · actualizando";
             service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
             service.queueFrame(ProtocolFrame.command(WatchBattery.GROUP, WatchBattery.REQUEST,
                     new byte[0], service.sequence++ & 0xffff));
             service.handler.postDelayed(() -> {
                 if (service.batteryPending && service.batteryRequestId == requestId) {
                     service.batteryPending = false;
-                    batteryStatus = "Batería: sin respuesta";
+                    loadBattery(service, service.address);
+                    batteryStatus += " · sin respuesta";
                     service.sendBroadcast(new Intent(ACTION_STATUS).setPackage(service.getPackageName()));
                 }
             }, 8000);
@@ -221,7 +390,7 @@ public class WatchService extends Service {
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("watch", "Conexión del reloj", NotificationManager.IMPORTANCE_LOW));
         Notification notification = new Notification.Builder(this, "watch")
-                .setContentTitle("LifeFit")
+                .setContentTitle("CustomWatch")
                 .setContentText("Conexión con el reloj activa")
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setOngoing(true)
@@ -237,6 +406,7 @@ public class WatchService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.hasExtra("address")) {
             address = intent.getStringExtra("address");
+            loadBattery(this, address);
             closeConnection();
             connect();
         }
@@ -279,13 +449,21 @@ public class WatchService extends Service {
 
     private void closeConnection() {
         handler.removeCallbacks(reconnect);
+        handler.removeCallbacks(periodicBattery);
         ready = false;
         batteryPending = false;
         batteryRequestId++;
-        batteryStatus = "Batería: sin consultar";
+        loadBattery(this, address);
         healthPending = false;
         healthRequestId++;
         healthStatus = "Sin consultar";
+        activityPending = false;
+        activityRequestId++;
+        activityStatus = "Actividad: sin consultar";
+        sleepStatus = "Sueño: sin consultar";
+        if (sleepSync != null) sleepHistoryStatus = "Historial: sincronización interrumpida";
+        sleepSync = null;
+        sleepSyncRequestId++;
         alarmsPending = false;
         alarmsRequestId++;
         alarmsStatus = "Alarmas: sin consultar";
@@ -294,6 +472,10 @@ public class WatchService extends Service {
         sportStatus = "Deporte: sin consultar";
         writing = false;
         pendingSequence = -1;
+        weatherSequence = -1;
+        weatherStatus = "Clima: sin probar";
+        musicSequence = -1;
+        musicStatus = "Música: esperando controles del reloj";
         writes.clear();
         messages.clear();
         incoming.reset();
@@ -390,24 +572,67 @@ public class WatchService extends Service {
             }
             int incomingSequence = ((buffer[offset + 6] & 0xff) << 8) | (buffer[offset + 7] & 0xff);
             int flags = buffer[offset + 1] & 0xf0;
-            if (flags == 0x10 && length == 0 && incomingSequence == pendingSequence) {
-                pendingSequence = -1;
-                setStatus("Entrega BLE confirmada");
-                sendNextMessage();
+            if (flags == 0x10 && length == 0) {
+                if (incomingSequence == pendingSequence) {
+                    pendingSequence = -1;
+                    setStatus("Entrega BLE confirmada");
+                    sendNextMessage();
+                }
+                if (incomingSequence == weatherSequence) {
+                    weatherSequence = -1;
+                    weatherStatus = "Clima: recibido por BLE; visualización no confirmada";
+                    sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
+                }
+                if (incomingSequence == musicSequence) {
+                    musicSequence = -1;
+                    musicStatus = "Música: recibida por BLE; visualización no confirmada";
+                    sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
+                }
             } else if (flags == 0 && length > 0) {
                 byte[] body = Arrays.copyOfRange(buffer, offset + 8, offset + 8 + length);
                 int expected = ((buffer[offset + 4] & 0xff) << 8) | (buffer[offset + 5] & 0xff);
                 if (ProtocolFrame.checksum(body) == expected) {
+                    WatchActivity activity = WatchActivity.fromResponse(body);
+                    if (activityPending && activity != null) {
+                        activityPending = false;
+                        try (HealthRepository repository = new HealthRepository(this)) {
+                            repository.saveActivity(address, activity, System.currentTimeMillis());
+                            storageStatus = "";
+                        } catch (RuntimeException exception) {
+                            storageStatus = "No se pudo guardar la actividad en el móvil";
+                        }
+                        activityStatus = String.format(Locale.getDefault(),
+                                "Actividad de hoy: %d pasos\nDistancia: %.2f km\nCalorías: %.1f kcal",
+                                activity.steps, activity.kilometers, activity.calories);
+                        long totalSleepMinutes = activity.deepSleepMinutes + activity.lightSleepMinutes;
+                        sleepStatus = String.format(Locale.getDefault(),
+                            "Total: %d h %02d min\nProfundo: %d h %02d min\nLigero: %d h %02d min",
+                            totalSleepMinutes / 60, totalSleepMinutes % 60,
+                            activity.deepSleepMinutes / 60, activity.deepSleepMinutes % 60,
+                            activity.lightSleepMinutes / 60, activity.lightSleepMinutes % 60);
+                        sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
+                    }
                     WatchBattery battery = WatchBattery.fromResponse(body);
                     if (batteryPending && battery != null) {
                         batteryPending = false;
-                        batteryStatus = "Batería: " + battery.percentage + "%"
-                                + (battery.charging ? " · cargando" : "");
+                        getSharedPreferences("battery", MODE_PRIVATE).edit()
+                            .putInt(address + ":percentage", battery.percentage)
+                            .putBoolean(address + ":charging", battery.charging)
+                            .putLong(address + ":observed", System.currentTimeMillis()).apply();
+                        loadBattery(this, address);
                         sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
                     }
                     WatchHealth health = WatchHealth.fromResponse(body);
                     if (healthPending && health != null) {
                         healthPending = false;
+                        if (health.heartRate > 0) {
+                            try (HealthRepository repository = new HealthRepository(this)) {
+                                repository.savePulse(address, health.heartRate, System.currentTimeMillis());
+                                storageStatus = "";
+                            } catch (RuntimeException exception) {
+                                storageStatus = "No se pudo guardar el pulso en el móvil";
+                            }
+                        }
                         healthStatus = "Pulso: " + healthValue(health.heartRate, " lpm")
                                 + "\nOxígeno: " + healthValue(health.oxygen <= 100 ? health.oxygen : 0, "%")
                                 + "\nPresión: " + (health.systolic == 0 || health.diastolic == 0
@@ -447,7 +672,13 @@ public class WatchService extends Service {
                         sportStatus = "Deporte: estado " + sport;
                         sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
                     }
+                    int musicControl = WatchMusic.controlFromResponse(body);
+                    if (musicControl >= 0
+                            && getSharedPreferences("settings", MODE_PRIVATE).getBoolean("music_control", false)) {
+                        handleMusicControl(musicControl);
+                    }
                     queueFrame(ProtocolFrame.acknowledgement(incomingSequence));
+                    if (sleepSync != null) handleSleepHistory(incomingSequence, body);
                 }
             }
             offset += length + 8;
@@ -458,6 +689,86 @@ public class WatchService extends Service {
 
     private static String healthValue(int value, String unit) {
         return value == 0 ? "no disponible" : value + unit;
+    }
+
+    private void sleepSyncTimeout() {
+        int requestId = ++sleepSyncRequestId;
+        handler.postDelayed(() -> {
+            if (sleepSync != null && sleepSyncRequestId == requestId) {
+                sleepSync = null;
+                sleepHistoryStatus = "Historial: sin respuesta o transferencia interrumpida";
+                sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
+            }
+        }, 15000);
+    }
+
+    private void handleSleepHistory(int incomingSequence, byte[] body) {
+        WatchSleepSync.Result result = sleepSync.accept(incomingSequence, body);
+        switch (result) {
+            case REQUEST_METADATA:
+                sleepHistoryStatus = "Historial: consultando registros...";
+                queueFrame(ProtocolFrame.command(5, 5, new byte[0], sequence++ & 0xffff));
+                break;
+            case REQUEST_SLEEP:
+                sleepHistoryStatus = "Historial: recibiendo datos...";
+                queueFrame(ProtocolFrame.command(WatchSleepTransfer.GROUP, WatchSleepTransfer.REQUEST,
+                        new byte[]{WatchSleepTransfer.SLEEP_TYPE}, sequence++ & 0xffff));
+                break;
+            case PROGRESS:
+            case DUPLICATE:
+                break;
+            case EMPTY:
+                sleepSync = null;
+                sleepSyncRequestId++;
+                sleepHistoryStatus = "Historial: el reloj no anuncia registros pendientes";
+                break;
+            case SAVE:
+                boolean hasData = sleepSync.completedData().length > 0;
+                try (WatchSleepArchive archive = new WatchSleepArchive(this)) {
+                    archive.save(address, sleepSync.timestamped(), TimeZone.getDefault().getID(), sleepSync.completedData());
+                } catch (RuntimeException exception) {
+                    sleepSync = null;
+                    sleepSyncRequestId++;
+                    sleepHistoryStatus = "Historial: no se pudo guardar; sin confirmar";
+                    break;
+                }
+                sleepSync = null;
+                sleepSyncRequestId++;
+                queueFrame(ProtocolFrame.command(WatchSleepTransfer.GROUP, WatchSleepTransfer.CONFIRM,
+                        new byte[]{0}, sequence++ & 0xffff));
+                loadSleepHistory(this, address);
+                sleepHistoryStatus = hasData ? "Historial guardado; confirmación solicitada"
+                    : "Sin registros nuevos; confirmación solicitada";
+                break;
+            case ERROR:
+                sleepSync = null;
+                sleepSyncRequestId++;
+                sleepHistoryStatus = "Historial: transferencia inválida; sin confirmar";
+                break;
+            default:
+                return;
+        }
+        if (sleepSync != null) sleepSyncTimeout();
+        sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
+    }
+
+    private void handleMusicControl(int control) {
+        AudioManager audio = getSystemService(AudioManager.class);
+        if (audio == null) return;
+        String action;
+        if (control <= 4) {
+            int key = control <= 2 ? KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                    : control == 3 ? KeyEvent.KEYCODE_MEDIA_NEXT : KeyEvent.KEYCODE_MEDIA_PREVIOUS;
+            action = control <= 2 ? "reproducir/pausar" : control == 3 ? "siguiente" : "anterior";
+            audio.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
+            audio.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
+        } else {
+            action = control == 5 ? "subir volumen" : "bajar volumen";
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                    control == 5 ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, 0);
+        }
+        musicStatus = "Música: " + action + " recibido";
+        sendBroadcast(new Intent(ACTION_STATUS).setPackage(getPackageName()));
     }
 
     private final BluetoothGattCallback callback = new BluetoothGattCallback() {
@@ -572,7 +883,9 @@ public class WatchService extends Service {
     private void finishSetup(BluetoothGatt connection) {
         if (connection == gatt && !ready) {
             ready = true;
-            setStatus("Conectado · envío experimental");
+            setStatus("Conectado");
+            handler.removeCallbacks(periodicBattery);
+            handler.postDelayed(periodicBattery, 5000);
         }
     }
 }

@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <permission android:name="es.lifefit.watch.permission.STATUS" android:protectionLevel="signature" />
+    <uses-permission android:name="es.lifefit.watch.permission.STATUS" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
@@ -7,9 +9,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
 
-    <application android:allowBackup="false" android:label="LifeFit" android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true">
+    <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@drawable/ic_customwatch" android:label="CustomWatch" android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".ProductActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -17,7 +22,7 @@
         </activity>
         <service android:name=".WatchService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <service android:name=".NotificationRelayService" android:exported="true"
-            android:label="LifeFit" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            android:label="CustomWatch" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>

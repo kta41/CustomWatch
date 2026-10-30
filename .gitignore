@@ -3,6 +3,7 @@
 *.apks
 .gradle/
 build/
+app/build/
 local.properties
 *.jks
 *.keystore

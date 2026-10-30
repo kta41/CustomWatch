@@ -5,9 +5,25 @@ import java.util.Arrays;
 
 public class NotificationPayloadTest {
     public static void main(String[] args) {
+        check(NotificationRouting.isAllowed(true, true));
+        check(!NotificationRouting.isAllowed(false, true));
+        check(!NotificationRouting.isAllowed(true, false));
         check(NotificationRouting.isWhatsAppDirect(false));
         check(!NotificationRouting.isWhatsAppDirect(true));
         check(!NotificationRouting.isWhatsAppDirect(null));
+        check(NotificationRouting.isRingingAlarm("clock", "channel", "alarm", false, true, false));
+        check(NotificationRouting.isRingingAlarm("clock", "channel", "alarm", false, false, true));
+        check(!NotificationRouting.isRingingAlarm("clock", "channel", "alarm", false, false, false));
+        check(!NotificationRouting.isRingingAlarm("clock", "channel", "msg", true, true, true));
+        check(!NotificationRouting.isRingingAlarm("clock", "channel", null, true, true, true));
+        check(NotificationRouting.isRingingAlarm("com.android.deskclock", "channel_id_deskclock_alarm",
+            null, true, false, true));
+        check(!NotificationRouting.isRingingAlarm("com.android.deskclock", "channel_id_deskclock_alarm",
+            null, true, false, false));
+        check(!NotificationRouting.isRingingAlarm("com.android.deskclock", "channel_id_deskclock_timer",
+            null, true, false, true));
+        check(!NotificationRouting.isRingingAlarm("another.app", "channel_id_deskclock_alarm",
+            null, true, false, true));
         check(NotificationRouting.abbreviatedName("María García López").equals("María G."));
         check(NotificationRouting.abbreviatedName("  Ana   pérez  ").equals("Ana P."));
         check(NotificationRouting.abbreviatedName("Ana").equals("Ana"));
@@ -17,12 +33,12 @@ public class NotificationPayloadTest {
         check(NotificationRouting.teamsSenderPrefixLength("Ana Pérez: Hola", "Grupo", false) == 11);
         check(NotificationRouting.teamsSenderPrefixLength("Hola: qué tal", "Ana Pérez", false) == 0);
         check(NotificationRouting.teamsSenderPrefixLength("¿Qué tal?: Hola", "Grupo", true) == 0);
-        byte[] legacy = NotificationPayload.legacy("LifeFit", "Prueba de aviso");
-        check(legacy.length == 46);
-        check(new String(legacy, 0, 7, StandardCharsets.UTF_8).equals("LifeFit"));
-        check(Arrays.equals(Arrays.copyOfRange(legacy, 7, 20), new byte[13]));
-        check(legacy[20] == 0 && legacy[21] == 24);
-        check(new String(legacy, 22, 24, StandardCharsets.UTF_8).equals("LifeFit: Prueba de aviso"));
+        byte[] legacy = NotificationPayload.legacy("CustomWatch", "Prueba de aviso");
+        check(legacy.length == 50);
+        check(new String(legacy, 0, 11, StandardCharsets.UTF_8).equals("CustomWatch"));
+        check(Arrays.equals(Arrays.copyOfRange(legacy, 11, 20), new byte[9]));
+        check(legacy[20] == 0 && legacy[21] == 28);
+        check(new String(legacy, 22, 28, StandardCharsets.UTF_8).equals("CustomWatch: Prueba de aviso"));
         byte[] noSender = NotificationPayload.legacy(null, "Hola");
         check(noSender[20] == 0 && noSender[21] == 4);
         check(new String(noSender, 22, 4, StandardCharsets.UTF_8).equals("Hola"));

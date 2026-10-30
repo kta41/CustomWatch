@@ -14,4 +14,10 @@ android {
         versionCode 1
         versionName '0.1.0'
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "CustomWatch-${variant.name}.apk"
+        }
+    }
 }

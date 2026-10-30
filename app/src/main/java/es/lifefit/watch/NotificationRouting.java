@@ -6,8 +6,19 @@ public final class NotificationRouting {
     private NotificationRouting() {
     }
 
+    public static boolean isAllowed(boolean relayEnabled, boolean appEnabled) {
+        return relayEnabled && appEnabled;
+    }
+
     public static boolean isWhatsAppDirect(Boolean groupConversation) {
         return Boolean.FALSE.equals(groupConversation);
+    }
+
+    public static boolean isRingingAlarm(String packageName, String channel, String category,
+            boolean ongoing, boolean insistent, boolean fullScreen) {
+        boolean xiaomiAlarm = "com.android.deskclock".equals(packageName)
+                && "channel_id_deskclock_alarm".equals(channel) && ongoing && fullScreen;
+        return xiaomiAlarm || ("alarm".equals(category) && (insistent || fullScreen));
     }
 
     public static int teamsNotificationType(boolean smsIcon) {
