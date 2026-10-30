@@ -1,6 +1,6 @@
 # CustomWatch
 
-Aplicacion Android experimental para el reloj **Prixton Life Fit**. Implementa un cliente Bluetooth Low Energy (BLE) propio y parte del protocolo observado en la aplicacion original redacted. No es un reemplazo completo y no esta afiliada a Prixton ni a redacted.
+Aplicacion Android experimental para el reloj **Prixton Life Fit**. Implementa un cliente Bluetooth Low Energy (BLE) propio y parte del protocolo observado en el dispositivo. No implementa todas las funciones del reloj y no esta afiliada a Prixton.
 
 ## Estado funcional
 
@@ -147,7 +147,7 @@ Las variantes de clima dependen de capacidades del dispositivo que CustomWatch t
 
 El usuario indica que el reloj tiene un modo de sueno que se activa en el propio reloj y que la app original muestra un analisis de fases, incluido REM. Todavia no se ha observado esa secuencia en el dispositivo ni se ha determinado si envia datos en directo o registros almacenados.
 
-En el analisis estatico de redacted, `kf.s.q()` selecciona el tipo de sincronizacion `2` y utiliza `vf.m` para interpretar registros de sueno. Este decodificador admite dos formatos, seleccionados segun capacidades del dispositivo: muestras de un byte asociadas al intervalo del bloque o registros de cinco bytes con fecha y estado. El SDK agrupa los datos en segmentos con hora de inicio, hora de final y estado; en `SleepItemData` los estados declarados son `1` profundo, `2` ligero y `3` despierto. Esta ruta no identifica REM por separado; eso no descarta otra ruta o un calculo adicional de la app. No se conoce aun el formato utilizado por este Prixton ni la precision de las fases.
+En el analisis estatico, `kf.s.q()` selecciona el tipo de sincronizacion `2` y utiliza `vf.m` para interpretar registros de sueno. Este decodificador admite dos formatos, seleccionados segun capacidades del dispositivo: muestras de un byte asociadas al intervalo del bloque o registros de cinco bytes con fecha y estado. El SDK agrupa los datos en segmentos con hora de inicio, hora de final y estado; en `SleepItemData` los estados declarados son `1` profundo, `2` ligero y `3` despierto. Esta ruta no identifica REM por separado; eso no descarta otra ruta o un calculo adicional de la app. No se conoce aun el formato utilizado por este Prixton ni la precision de las fases.
 
 CustomWatch consulta el resumen diario con la misma solicitud `0x05/0x21` que utiliza para actividad. La respuesta `0x05/0x22` contiene, segun el SDK, dos enteros de cuatro bytes para minutos de sueno profundo y ligero a partir de los offsets 12 y 16 del payload; el total es su suma. Dos consultas al Prixton dieron 5 h 28 min, coincidiendo con el total indicado por el usuario en el reloj. El desglose no se ha contrastado de forma independiente, y el resumen no proporciona REM ni detalle temporal. Las fases son orientativas, no datos medicos.
 
@@ -174,6 +174,6 @@ Cubren ejemplos de tramas, CRC, enrutamiento, longitudes y decodificacion de res
 
 ## Evidencia y limites
 
-El protocolo se infirio principalmente mediante analisis estatico de redacted `com.redacted.redacted`, version `2.2.0.4` (codigo 381), APK SHA-256 `942ebe912e41eca90a4e1b9f9f6eb903aaf29a63ef09a73ae1494cf2b937761a`. La deteccion especifica de alarma del telefono se contrasto con analisis estatico de su app Reloj. Las observaciones del SDK no garantizan que todas las funciones esten implementadas o habilitadas en este modelo o firmware.
+El protocolo se infirio mediante analisis estatico, una captura BLE y pruebas en el dispositivo. La deteccion especifica de alarma del telefono se contrasto con analisis estatico de su app Reloj. Las observaciones del SDK no garantizan que todas las funciones esten implementadas o habilitadas en este modelo o firmware.
 
 No se incluyen APK de terceros ni volcados de notificaciones o claves en el repositorio. Antes de compartir registros o capturas, elimina datos personales, identificadores del dispositivo y credenciales.

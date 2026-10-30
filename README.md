@@ -8,7 +8,7 @@
 ![Gradle](https://img.shields.io/badge/Gradle-8.9-02303A?style=flat-square&logo=gradle&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-Experimental-D49A36?style=flat-square)
 
-CustomWatch replaces part of the original redacted companion experience with a native Android application. It connects directly to the watch, keeps health observations on the phone and relays selected notifications. This is an independent project, not affiliated with Prixton or redacted; it is not a complete replacement for the original application.
+CustomWatch is a native Android application that connects directly to the watch, keeps health observations on the phone and relays selected notifications. This independent project is not affiliated with Prixton and does not implement every feature of the watch.
 
 ## Features
 
@@ -32,10 +32,9 @@ Advanced tools include experimental sport and weather requests and the original 
 | Tested watch | Prixton Life Fit; model identifier `CS-SLXJ-268` matches a commercial listing. |
 | Bluetooth name | `HLifeFit_191` on the tested unit. |
 | Watch firmware version | **Unknown / not independently verified.** Compatibility may differ between firmware versions and individual devices. |
-| Original Android companion | redacted `com.redacted.redacted`, version `2.2.0.4` (version code `381`), analyzed as a protocol reference. |
 | Custom firmware | None. CustomWatch is an Android companion; it does not flash, replace or update the watch firmware. |
 
-Protocol behavior is based on static analysis of the companion and SDK, a limited BLE capture, and tests on one watch. An acknowledged BLE frame does not by itself prove that the watch displayed or performed the requested action. See the [Spanish technical reference](TECHNICAL_REFERENCE.es.md) and [research report](informe-tecnico.md) for evidence, supported commands and unresolved questions.
+Protocol behavior is based on static analysis, a limited BLE capture, and tests on one watch. An acknowledged BLE frame does not by itself prove that the watch displayed or performed the requested action. See the [Spanish technical reference](TECHNICAL_REFERENCE.es.md) for supported commands and unresolved questions.
 
 ## Getting Started
 
@@ -103,7 +102,6 @@ app/src/main/java/           UI, persistence, notification routing and protocol
 app/src/debug/               Isolated Android instrumentation checks
 tests/                       Standalone Java protocol and notification tests
 TECHNICAL_REFERENCE.es.md    Detailed feature, protocol and research reference
-informe-tecnico.md           Original reverse-engineering report
 ```
 
 ## Testing

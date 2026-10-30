@@ -7,5 +7,6 @@ app/build/
 local.properties
 *.jks
 *.keystore
-redacted-evidence.json
-redacted-gatt-correlacion-evidence.json
+*-evidence.json
+*-investigacion-modelo.json
+informe-tecnico.md
