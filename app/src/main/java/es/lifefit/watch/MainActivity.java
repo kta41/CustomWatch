@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
         watchSection.addView(label("RELOJ", 13, Color.rgb(137, 71, 51)));
         address = new EditText(this);
         address.setSingleLine(true);
-        address.setText(getPreferences(MODE_PRIVATE).getString("address", "[redacted]"));
+        address.setText(getPreferences(MODE_PRIVATE).getString("address", ""));
         address.setContentDescription("Dirección Bluetooth del reloj");
         watchSection.addView(address);
         Button connect = button("Conectar");

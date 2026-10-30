@@ -51,7 +51,6 @@ public final class ProductActivity extends Activity {
     private static final int MUTED = Color.rgb(174, 184, 178);
     private static final int ACCENT = Color.rgb(178, 204, 157);
     private static final int WARM = Color.rgb(217, 180, 145);
-    private static final String DEFAULT_ADDRESS = "[redacted]";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler();
     private final Runnable refresh = this::loadData;
@@ -137,7 +136,7 @@ public final class ProductActivity extends Activity {
     }
 
     private String address() {
-        return getSharedPreferences("MainActivity", MODE_PRIVATE).getString("address", DEFAULT_ADDRESS);
+        return getSharedPreferences("MainActivity", MODE_PRIVATE).getString("address", "");
     }
 
     private void loadData() {
